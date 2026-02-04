@@ -1,10 +1,10 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import SCENARIO_JOURNEYS from '@/components/nokia/data/flow_journey.jsx';
-import INITIAL_NODES from '@/components/nokia/data/nodes.jsx';
-import INITIAL_RELATIONSHIPS from '@/components/nokia/data/relationships.jsx';
-import INITIAL_POSITIONS from '@/components/nokia/data/positions.jsx';
-import DEFAULT_MODULES from '@/components/nokia/data/default_nodes.jsx';
-import RELATIONSHIP_COLORS from '@/components/nokia/data/color_selections.jsx';
+import SCENARIO_JOURNEYS from '@/components/data/flow_journey.jsx';
+import INITIAL_NODES from '@/components/data/nodes.jsx';
+import INITIAL_RELATIONSHIPS from '@/components/data/relationships.jsx';
+import INITIAL_POSITIONS from '@/components/data/positions.jsx';
+import DEFAULT_MODULES from '@/components/data/default_nodes.jsx';
+import RELATIONSHIP_COLORS from '@/components/data/color_selections.jsx';
 
 const getRelationshipColor = (type) => RELATIONSHIP_COLORS[type] || RELATIONSHIP_COLORS.default;
 

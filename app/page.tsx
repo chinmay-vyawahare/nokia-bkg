@@ -1,6 +1,6 @@
 'use client';
 
-import NokiaBusinessKnowledgeGraph from '@/components/nokia/main';
+import NokiaBusinessKnowledgeGraph from '@/components/main';
 
 
 export default function Home() {
