@@ -62,7 +62,7 @@ const SCENARIO_JOURNEYS = {
         description: 'Recover delayed telecom rollout with realistic week-by-week plan by optimizing crews, clearing blockers, and prioritizing ready sites',
         color: '#ef4444',
         category: 'Planning',
-        path: ['Market', 'Site', 'Project', 'Milestone_Status', 'Plan_vs_Actual', 'Schedule_Recovery_Decision', 'Integration_Backlog', 'Integration', 'Integration_Readiness_Decision', 'Backhaul'],
+        path: ['Market', 'Site','Crew','Crew_Utilization','Site', 'Project', 'Milestone_Status', 'Plan_vs_Actual', 'Schedule_Recovery_Decision', 'Integration_Backlog', 'Integration', 'Integration_Readiness_Decision', 'Backhaul'],
         dataFlow: [
             { step: 1, from: 'Market', to: 'Site', action: 'Get total sites in market - Completed/In-Progress/Not Started (LOCATED_IN)' },
             { step: 2, from: 'Site', to: 'Project', action: 'Classify projects by status and identify blockers (HAS_PROJECTS)' },
@@ -80,32 +80,7 @@ const SCENARIO_JOURNEYS = {
             'What is the plan vs actual variance for key milestones?',
             'Can the current plan meet the target date with recovery actions?'
         ]
-    },
-    gc_crew_reduction_impact: {
-        id: 'gc_crew_reduction_impact',
-        name: 'GC Crew Reduction Impact',
-        shortName: 'Vendor Crew Loss (50%)',
-        description: 'CX completion plan when leading vendor loses 50% of crews - reassignment and reallocation simulation',
-        color: '#f97316',
-        category: 'Resource Management',
-        path: ['Market', 'General_Contractor', 'Crew', 'Site', 'HSE_Compliance', 'HSE_Compliance_Rate', 'Vendor_Performance_Score', 'Vendor_Selection_Decision'],
-        dataFlow: [
-            { step: 1, from: 'Market', to: 'General_Contractor', action: 'Identify GCs operating in target market (OPERATES_IN)' },
-            { step: 2, from: 'General_Contractor', to: 'Crew', action: 'Get crew counts per GC - identify top vendor (MANAGES)' },
-            { step: 3, from: 'Crew', to: 'Site', action: 'Map current crew-to-site assignments (ASSIGNED_TO)' },
-            { step: 4, from: 'Crew', to: 'HSE_Compliance', action: 'Verify remaining crews have HSE compliance (MUST_HAVE)' },
-            { step: 5, from: 'HSE_Compliance', to: 'HSE_Compliance_Rate', action: 'Calculate safety compliance rate per GC (FEEDS)' },
-            { step: 6, from: 'HSE_Compliance_Rate', to: 'Vendor_Performance_Score', action: 'Safety score contributes to vendor rating (CONTRIBUTES_TO)' },
-            { step: 7, from: 'Vendor_Performance_Score', to: 'Vendor_Selection_Decision', action: 'Use performance scores for workload reallocation (INPUTS_TO)' }
-        ],
-        questions: [
-            'How many sites are pending CX start?',
-            'How many crews are working and who is the top vendor?',
-            'Which vendors have capacity to absorb reassigned sites?',
-            'After reassigning sites to reduced crews, what is the revised plan?'
-        ]
-    },
-    
+    }
 };
 
 export default SCENARIO_JOURNEYS;

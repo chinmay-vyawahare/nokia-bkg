@@ -211,8 +211,8 @@ const NokiaBusinessKnowledgeGraph = () => {
                 opacity = 0.2;
             }
         } else {
-            opacity = selectedNode && !isSelected && !isConnected ? 0.3 : 1;
-            if (isSelected) fillColor = node.color;
+            opacity = selectedNode && !isSelected && !isConnected ? 0.25 : 1;
+            fillColor = node.color;
             if (isSelected || isHovered) strokeWidth = 4;
         }
 
@@ -656,12 +656,14 @@ const NokiaBusinessKnowledgeGraph = () => {
                                 strokeWidth = 3;
                                 opacity = 0.7;
                             } else {
-                                opacity = 0.1;
+                                opacity = 0.15;
                             }
                         } else if (isHighlighted) {
                             strokeColor = getRelationshipColor(rel.type);
                             strokeWidth = 3;
                             opacity = 1;
+                        } else if (selectedNode) {
+                            opacity = 0.2;
                         }
 
                         return (
@@ -674,14 +676,13 @@ const NokiaBusinessKnowledgeGraph = () => {
                                     markerEnd={markerEnd}
                                     className={isActive ? 'animate-pulse' : ''}
                                 />
-                                {(isHighlighted || isActive) && (
-                                    <text
-                                        x={(startX + endX) / 2} y={(startY + endY) / 2 - 8}
-                                        textAnchor="middle" fill={strokeColor} fontSize="10" fontWeight="600"
-                                    >
-                                        {rel.label}
-                                    </text>
-                                )}
+                                <text
+                                    x={(startX + endX) / 2} y={(startY + endY) / 2 - 8}
+                                    textAnchor="middle" fill={opacity >= 0.9 ? strokeColor : '#000000'} fontSize="10" fontWeight="600"
+                                    opacity={opacity}
+                                >
+                                    {rel.label}
+                                </text>
                             </g>
                         );
                     })}
@@ -712,10 +713,10 @@ const NokiaBusinessKnowledgeGraph = () => {
                                 <text
                                     textAnchor="middle"
                                     dy={node.nodeType === 'decision' ? 50 : node.nodeType === 'kpi' ? 45 : 48}
-                                    fill={activeScenario ? (inPath ? (isCurrent ? activeScenario.color : '#374151') : '#9ca3af') : (isSelected ? node.color : '#374151')}
+                                    fill={activeScenario ? (inPath ? (isCurrent ? activeScenario.color : '#374151') : '#9ca3af') : node.color}
                                     fontSize="11"
                                     fontWeight={isCurrent ? '700' : '600'}
-                                    opacity={activeScenario && !inPath ? 0.3 : 1}
+                                    opacity={1}
                                 >
                                     {node.id.replace(/_/g, ' ').length > 16 ? node.id.replace(/_/g, ' ').slice(0, 80) + '' : node.id.replace(/_/g, ' ')}
                                 </text>

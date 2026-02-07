@@ -39,7 +39,7 @@ const INITIAL_POSITIONS = {
     'Weekly_Site_Forecast': { x: 400, y: 1000 },
     'Milestone_Status': { x: 600, y: 1000 },
     'Alarm_Count': { x: 1950, y: 550 },
-    'Survey_Type_Decision': { x: 550, y: 400 },
+    'Survey_Type_Decision': { x: 660, y: 450 },
     'GC_Assignment_Decision': { x: 350, y: 700 },
     'Crane_Requirement_Decision': { x: 1150, y: 550 },
     'Site_Priority_Decision': { x: 2150, y: 250 },
