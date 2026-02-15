@@ -6,19 +6,14 @@ const SCENARIO_JOURNEYS = {
         description: 'Plan for 100 sites in 3 weeks with dependency status and action plan',
         color: '#10b981',
         category: 'Planning',
-        path: ['Market', 'Site','Site_Readiness_Rate','Site', 'Project', 'NTP_Document', 'Survey', 'Scoping_Package', 'BOM', 'Purchase_Order', 'Material', 'Material_Availability_Rate'],
+        path: ['Market', 'Site','Site_Readiness_Rate','Site', 'Project','Site','Crew','Crew_Utilization'],
         dataFlow: [
             { step: 1, from: 'Market', to: 'Site', action: 'Filter sites located in Chicago market (LOCATED_IN)' },
             { step: 2, from: 'Site', to: 'Site_Readiness_Rate', action: 'Get projects per site - Completed/WIP/Pending (HAS_PROJECTS)' },
+            { step: 2, from: 'Site', to: 'Crew', action: 'Get projects per site - Completed/WIP/Pending (HAS_PROJECTS)' },
+            { step: 2, from: 'Crew', to: 'Crew_Utilization', action: 'Get projects per site - Completed/WIP/Pending (HAS_PROJECTS)' },
             { step: 3, from: 'Site', to: 'Project', action: 'Get projects per site - Completed/WIP/Pending (HAS_PROJECTS)' },
             { step: 4, from: 'Site_Readiness_Rate', to: 'Project', action: 'Get projects per site - Completed/WIP/Pending (HAS_PROJECTS)' },
-            { step: 5, from: 'Project', to: 'NTP_Document', action: 'Check NTP prerequisite status (REQUIRES)' },
-            { step: 6, from: 'NTP_Document', to: 'Survey', action: 'Verify survey enabled by NTP (ENABLES)' },
-            { step: 7, from: 'Survey', to: 'Scoping_Package', action: 'Validate scoping package produced (PRODUCES)' },
-            { step: 8, from: 'Scoping_Package', to: 'BOM', action: 'Check BOM generated from scope (GENERATES)' },
-            { step: 9, from: 'BOM', to: 'Purchase_Order', action: 'Verify PO triggered for materials (TRIGGERS)' },
-            { step: 10, from: 'Purchase_Order', to: 'Material', action: 'Track material procurement status (PROCURES)' },
-            { step: 11, from: 'Material', to: 'Material_Availability_Rate', action: 'Calculate material availability KPI (FEEDS)' }
         ],
         questions: [
             'What is the total number of sites, completed sites and WIP for Chicago market?',
