@@ -19,7 +19,6 @@ export interface Node {
   columnLineage?: unknown;
   derivedConcepts?: unknown;
   groupByOptions?: unknown;
-  storeTypeValues?: unknown;
   usedInDecisions?: unknown;
   businessRule?: string;
 }
@@ -244,6 +243,24 @@ export async function createJourney(journeyKey: string, journey: Partial<Journey
   return res.json();
 }
 
+export async function updateJourney(journeyKey: string, journey: Partial<Journey>): Promise<{ journey_key: string; message: string }> {
+  const res = await fetch(`${API_BASE}/api/journeys/${encodeURIComponent(journeyKey)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...NGROK_HEADERS },
+    body: JSON.stringify({ journey_key: journeyKey, ...journey }),
+  });
+  if (!res.ok) throw new Error((await res.json())?.detail || `Update failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteJourney(journeyKey: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/journeys/${encodeURIComponent(journeyKey)}`, {
+    method: 'DELETE',
+    headers: { ...NGROK_HEADERS }
+  });
+  if (!res.ok) throw new Error((await res.json())?.detail || `Delete journey failed: ${res.status}`);
+}
+
 // ---- Admin Operations ----
 export async function reloadFromJsx(): Promise<{ message: string; nodes: number; relationships: number; journeys: number; positions: number }> {
   const res = await fetch(`${API_BASE}/api/admin/reload`, {
@@ -256,6 +273,15 @@ export async function reloadFromJsx(): Promise<{ message: string; nodes: number;
 
 export async function clearDatabase(): Promise<{ message: string }> {
   const res = await fetch(`${API_BASE}/api/admin/clear`, {
+    method: 'POST',
+    headers: { ...NGROK_HEADERS }
+  });
+  if (!res.ok) throw new Error((await res.json())?.detail || `Clear failed: ${res.status}`);
+  return res.json();
+}
+
+export async function sendMessage(): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/chat/fulldb`, {
     method: 'POST',
     headers: { ...NGROK_HEADERS }
   });

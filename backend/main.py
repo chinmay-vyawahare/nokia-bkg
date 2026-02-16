@@ -5,7 +5,7 @@ Nokia Business Graph Backend
 - Parses JSX files and uploads data automatically
 - Provides FastAPI REST API for all operations
 """
-
+import chat    
 import json
 import os
 import re
@@ -31,7 +31,6 @@ JSON_COLUMNS = {
     "columnLineage",
     "derivedConcepts",
     "groupByOptions",
-    "storeTypeValues",
     "usedInDecisions",
 }
 
@@ -83,7 +82,6 @@ def _get_table_columns():
         "columnLineage",
         "derivedConcepts",
         "groupByOptions",
-        "storeTypeValues",
         "usedInDecisions",
         "businessRule",
     }
@@ -228,7 +226,6 @@ def create_tables():
                 columnLineage TEXT,
                 derivedConcepts TEXT,
                 groupByOptions TEXT,
-                storeTypeValues TEXT,
                 usedInDecisions TEXT,
                 businessRule TEXT
             )
@@ -289,6 +286,28 @@ def create_tables():
                 rule TEXT,
                 lifecycleRegimes TEXT,
                 questions TEXT
+            )
+        """
+        )
+
+        # Modules table (graph module definitions with colors)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS modules (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT,
+                description TEXT
+            )
+        """
+        )
+
+        # Relationship colors table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rel_colors (
+                type TEXT PRIMARY KEY,
+                color TEXT NOT NULL
             )
         """
         )
@@ -577,6 +596,44 @@ def extract_positions_from_jsx(file_path: str) -> Dict[str, Dict[str, float]]:
         return {}
 
 
+def extract_modules_from_jsx(file_path: str) -> dict:
+    """Extract DEFAULT_MODULES object from JSX file"""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        obj_str = extract_object_from_jsx(content, "DEFAULT_MODULES")
+        if not obj_str:
+            print(f"  ⚠ Could not find DEFAULT_MODULES object in {file_path}")
+            return {}
+        cleaned = clean_js_to_json(obj_str)
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"  ✗ Error parsing modules: {e}")
+        return {}
+    except Exception as e:
+        print(f"  ✗ Error reading {file_path}: {e}")
+        return {}
+
+
+def extract_rel_colors_from_jsx(file_path: str) -> dict:
+    """Extract RELATIONSHIP_COLORS object from JSX file"""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        obj_str = extract_object_from_jsx(content, "RELATIONSHIP_COLORS")
+        if not obj_str:
+            print(f"  ⚠ Could not find RELATIONSHIP_COLORS object in {file_path}")
+            return {}
+        cleaned = clean_js_to_json(obj_str)
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"  ✗ Error parsing relationship colors: {e}")
+        return {}
+    except Exception as e:
+        print(f"  ✗ Error reading {file_path}: {e}")
+        return {}
+
+
 # ==============================================================================
 # DATABASE OPERATIONS
 # ==============================================================================
@@ -596,6 +653,14 @@ def get_all_nodes() -> List[dict]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM nodes ORDER BY module, id")
+        rows = cursor.fetchall()
+        return [_serialize_node(dict(r)) for r in rows]
+    
+def get_all_nodes_count() -> List[dict]:
+    """Get all nodes"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(id)  FROM nodes ORDER BY id")
         rows = cursor.fetchall()
         return [_serialize_node(dict(r)) for r in rows]
 
@@ -812,6 +877,56 @@ def get_journeys_dict() -> Dict[str, dict]:
     return {j.pop("journey_key"): j for j in journeys}
 
 
+def _journey_contains_node(journey: dict, node_id: str) -> bool:
+    """True if journey path or dataFlow references node_id."""
+    path = journey.get("path")
+    if isinstance(path, list) and node_id in path:
+        return True
+    if isinstance(path, str) and node_id in path.split(","):
+        return True
+    data_flow = journey.get("dataFlow")
+    if isinstance(data_flow, list):
+        for item in data_flow:
+            if isinstance(item, dict) and node_id in (item.get("from"), item.get("to")):
+                return True
+    return False
+
+
+def get_node_chat_context(node_id: str):
+    """
+    Get (node, relationships, related_nodes, journeys) for node-scoped chat.
+    relationships: those where from_node or to_node is node_id.
+    related_nodes: nodes that are the other end of those relationships.
+    journeys: flow journeys that include this node in path or dataFlow.
+    """
+    node = get_node(node_id)
+    if not node:
+        return None
+    all_rels = get_relationships()
+    rels_for_node = [
+        r for r in all_rels
+        if (r.get("from_node") or r.get("from")) == node_id or (r.get("to_node") or r.get("to")) == node_id
+    ]
+    other_ids = set()
+    for r in rels_for_node:
+        fr = r.get("from_node") or r.get("from")
+        to = r.get("to_node") or r.get("to")
+        if fr != node_id:
+            other_ids.add(fr)
+        if to != node_id:
+            other_ids.add(to)
+    all_nodes = get_all_nodes()
+    nodes_by_id = {n["id"]: n for n in all_nodes if n.get("id")}
+    related_nodes = [nodes_by_id[nid] for nid in other_ids if nid in nodes_by_id]
+    journeys_dict = get_journeys_dict()
+    journeys_for_node = [
+        {"journey_key": k, **v}
+        for k, v in journeys_dict.items()
+        if _journey_contains_node(v, node_id)
+    ]
+    return (node, rels_for_node, related_nodes, journeys_for_node)
+
+
 def insert_journey(journey_key: str, journey: dict):
     """Insert or replace one journey"""
     row = _journey_to_row(journey_key, journey)
@@ -841,6 +956,96 @@ def insert_journeys(journeys: dict) -> int:
 
 
 # ==============================================================================
+# MODULES OPERATIONS
+# ==============================================================================
+
+
+def get_modules() -> Dict[str, dict]:
+    """Get all modules as { key: { name, color, description } }"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, name, color, description FROM modules ORDER BY key")
+        rows = cursor.fetchall()
+        return {r["key"]: {"name": r["name"], "color": r["color"], "description": r["description"]} for r in rows}
+
+
+def upsert_module(key: str, name: str, color: str = None, description: str = None):
+    """Insert or update a module"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO modules (key, name, color, description) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET name=excluded.name, color=excluded.color, description=excluded.description",
+            (key, name, color, description),
+        )
+        conn.commit()
+
+
+def delete_module(key: str) -> bool:
+    """Delete a module by key"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM modules WHERE key = ?", (key,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def insert_modules(modules: dict) -> int:
+    """Bulk upsert modules from dict { key: { name, color, description } }"""
+    count = 0
+    for key, obj in modules.items():
+        if isinstance(obj, dict):
+            upsert_module(key, obj.get("name", key), obj.get("color"), obj.get("description"))
+            count += 1
+    return count
+
+
+# ==============================================================================
+# RELATIONSHIP COLORS OPERATIONS
+# ==============================================================================
+
+
+def get_rel_colors() -> Dict[str, str]:
+    """Get all relationship colors as { type: color }"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT type, color FROM rel_colors ORDER BY type")
+        rows = cursor.fetchall()
+        return {r["type"]: r["color"] for r in rows}
+
+
+def upsert_rel_color(rel_type: str, color: str):
+    """Insert or update a relationship color"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO rel_colors (type, color) VALUES (?, ?) "
+            "ON CONFLICT(type) DO UPDATE SET color=excluded.color",
+            (rel_type, color),
+        )
+        conn.commit()
+
+
+def delete_rel_color(rel_type: str) -> bool:
+    """Delete a relationship color"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM rel_colors WHERE type = ?", (rel_type,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def insert_rel_colors(colors: dict) -> int:
+    """Bulk upsert relationship colors from dict { type: color }"""
+    count = 0
+    for rel_type, color in colors.items():
+        if isinstance(color, str):
+            upsert_rel_color(rel_type, color)
+            count += 1
+    return count
+
+
+# ==============================================================================
 # DATA INITIALIZATION
 # ==============================================================================
 
@@ -853,6 +1058,8 @@ def init_from_jsx_files():
     - relationships.jsx (INITIAL_RELATIONSHIPS)
     - flow_journey.jsx (SCENARIO_JOURNEYS)
     - positions.jsx (INITIAL_POSITIONS)
+    - default_nodes.jsx (DEFAULT_MODULES)
+    - color_selections.jsx (RELATIONSHIP_COLORS)
     """
     print("\n📂 Loading data from JSX files...")
 
@@ -864,11 +1071,33 @@ def init_from_jsx_files():
     relationships_path = os.path.join(data_dir, "relationships.jsx")
     journey_path = os.path.join(data_dir, "flow_journey.jsx")
     positions_path = os.path.join(data_dir, "positions.jsx")
+    modules_path = os.path.join(data_dir, "default_nodes.jsx")
+    rel_colors_path = os.path.join(data_dir, "color_selections.jsx")
 
     nodes_count = 0
     rels_count = 0
     journeys_count = 0
     positions_count = 0
+    modules_count = 0
+    rel_colors_count = 0
+
+    # Extract and insert modules
+    if os.path.isfile(modules_path):
+        print(f"  → Parsing modules from {modules_path}")
+        modules = extract_modules_from_jsx(modules_path)
+        modules_count = insert_modules(modules)
+        print(f"  ✓ Loaded {modules_count} modules")
+    else:
+        print(f"  ⚠ Modules file not found: {modules_path}")
+
+    # Extract and insert relationship colors
+    if os.path.isfile(rel_colors_path):
+        print(f"  → Parsing relationship colors from {rel_colors_path}")
+        colors = extract_rel_colors_from_jsx(rel_colors_path)
+        rel_colors_count = insert_rel_colors(colors)
+        print(f"  ✓ Loaded {rel_colors_count} relationship colors")
+    else:
+        print(f"  ⚠ Relationship colors file not found: {rel_colors_path}")
 
     # Extract and insert nodes
     if os.path.isfile(nodes_path):
@@ -910,13 +1139,17 @@ def init_from_jsx_files():
         print(f"  ⚠ Positions file not found: {positions_path}")
 
     print(
-        f"\n✅ Database initialized with {nodes_count} nodes, {rels_count} relationships, {journeys_count} journeys, {positions_count} positions\n"
+        f"\n✅ Database initialized with {nodes_count} nodes, {rels_count} relationships, "
+        f"{journeys_count} journeys, {positions_count} positions, "
+        f"{modules_count} modules, {rel_colors_count} rel colors\n"
     )
     return {
         "nodes": nodes_count,
         "relationships": rels_count,
         "journeys": journeys_count,
         "positions": positions_count,
+        "modules": modules_count,
+        "rel_colors": rel_colors_count,
     }
 
 
@@ -1031,7 +1264,6 @@ class NodeBase(BaseModel):
     columnLineage: Optional[Any] = None
     derivedConcepts: Optional[Any] = None
     groupByOptions: Optional[Any] = None
-    storeTypeValues: Optional[Any] = None
     usedInDecisions: Optional[Any] = None
     businessRule: Optional[str] = None
 
@@ -1048,7 +1280,6 @@ class NodeUpdate(BaseModel):
     columnLineage: Optional[Any] = None
     derivedConcepts: Optional[Any] = None
     groupByOptions: Optional[Any] = None
-    storeTypeValues: Optional[Any] = None
     usedInDecisions: Optional[Any] = None
     businessRule: Optional[str] = None
 
@@ -1108,6 +1339,15 @@ class JourneyBase(BaseModel):
     rule: Optional[str] = None
     lifecycleRegimes: Optional[Any] = None
     questions: Optional[Any] = None
+
+
+class NodeChatRequest(BaseModel):
+    node_id: str
+    message: str
+    
+class ChatRequest(BaseModel):
+    node_id: str
+    message: str
 
 
 # ==============================================================================
@@ -1206,6 +1446,35 @@ def api_delete_node(node_id: str):
     if not delete_node(node_id):
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
     return {"message": f"Node '{node_id}' deleted"}
+
+
+@app.post("/api/chat/node")
+def api_chat_node(body: NodeChatRequest):
+    """Answer a question about a node using its context (node, relationships, related nodes, flow journeys) and OpenAI."""
+    import sys
+    _backend_dir = os.path.dirname(os.path.abspath(__file__))
+    if _backend_dir not in sys.path:
+        sys.path.insert(0, _backend_dir)
+    import chat
+    ctx = get_node_chat_context(body.node_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail=f"Node '{body.node_id}' not found")
+    node, relationships, related_nodes, journeys = ctx
+    reply = chat.answer_with_openai(node, relationships, related_nodes, journeys, body.message)
+    return {"reply": reply, "node_id": body.node_id}
+
+
+@app.post("/api/chat/fulldb")
+def api_chat(body: ChatRequest):
+    """Answer a question about a node using its context (node, relationships, related nodes, flow journeys) and OpenAI."""
+    if not body.message:
+        raise HTTPException(status_code=404, detail=f"Message not found")
+   
+    all_rels = get_relationships()
+    all_nodes = get_all_nodes()
+    node_count= get_all_nodes_count()
+    reply = chat.answer_with_openai_with_full_db_context(all_nodes,all_rels,node_count,body.message)
+    return {"reply": reply, "node_id": body.node_id}
 
 
 # ----- Positions Endpoints -----
@@ -1317,6 +1586,116 @@ def api_create_journey(journey: JourneyBase):
     }
 
 
+@app.put("/api/journeys/{journey_key}")
+def api_update_journey(journey_key: str, journey: JourneyBase):
+    """Update an existing journey"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT journey_key FROM journeys WHERE journey_key = ?", (journey_key,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=404, detail=f"Journey '{journey_key}' not found"
+            )
+    journey_dict = journey.model_dump(exclude_none=True)
+    journey_dict.pop("journey_key", None)
+    insert_journey(journey_key, journey_dict)
+    return {"journey_key": journey_key, "message": "Journey updated"}
+
+
+@app.delete("/api/journeys/{journey_key}")
+def api_delete_journey(journey_key: str):
+    """Delete a journey"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM journeys WHERE journey_key = ?", (journey_key,))
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=404, detail=f"Journey '{journey_key}' not found"
+            )
+    return {"message": f"Journey '{journey_key}' deleted"}
+
+
+# ----- Modules Endpoints -----
+
+
+class ModuleBase(BaseModel):
+    key: str
+    name: str
+    color: Optional[str] = None
+    description: Optional[str] = None
+
+
+@app.get("/api/modules")
+def api_get_modules():
+    """Get all modules as { key: { name, color, description } }"""
+    return get_modules()
+
+
+@app.post("/api/modules")
+def api_create_module(module: ModuleBase):
+    """Create or update a module"""
+    upsert_module(module.key, module.name, module.color, module.description)
+    return {"key": module.key, "message": "Module created/updated"}
+
+
+@app.put("/api/modules/{module_key}")
+def api_update_module(module_key: str, module: ModuleBase):
+    """Update a module"""
+    upsert_module(module_key, module.name, module.color, module.description)
+    return {"key": module_key, "message": "Module updated"}
+
+
+@app.delete("/api/modules/{module_key}")
+def api_delete_module(module_key: str):
+    """Delete a module"""
+    if not delete_module(module_key):
+        raise HTTPException(
+            status_code=404, detail=f"Module '{module_key}' not found"
+        )
+    return {"message": f"Module '{module_key}' deleted"}
+
+
+# ----- Relationship Colors Endpoints -----
+
+
+class RelColorBase(BaseModel):
+    type: str
+    color: str
+
+
+@app.get("/api/rel-colors")
+def api_get_rel_colors():
+    """Get all relationship colors as { type: color }"""
+    return get_rel_colors()
+
+
+@app.post("/api/rel-colors")
+def api_create_rel_color(data: RelColorBase):
+    """Create or update a relationship color"""
+    upsert_rel_color(data.type, data.color)
+    return {"type": data.type, "message": "Relationship color created/updated"}
+
+
+@app.put("/api/rel-colors/{rel_type}")
+def api_update_rel_color(rel_type: str, data: RelColorBase):
+    """Update a relationship color"""
+    upsert_rel_color(rel_type, data.color)
+    return {"type": rel_type, "message": "Relationship color updated"}
+
+
+@app.delete("/api/rel-colors/{rel_type}")
+def api_delete_rel_color(rel_type: str):
+    """Delete a relationship color"""
+    if not delete_rel_color(rel_type):
+        raise HTTPException(
+            status_code=404, detail=f"Relationship color '{rel_type}' not found"
+        )
+    return {"message": f"Relationship color '{rel_type}' deleted"}
+
+
 # ----- Bulk Operations -----
 
 
@@ -1363,6 +1742,8 @@ def api_clear_database():
         cursor.execute("DELETE FROM nodes")
         cursor.execute("DELETE FROM relationships")
         cursor.execute("DELETE FROM journeys")
+        cursor.execute("DELETE FROM modules")
+        cursor.execute("DELETE FROM rel_colors")
         conn.commit()
     return {"message": "Database cleared"}
 
@@ -1370,6 +1751,39 @@ def api_clear_database():
 # ==============================================================================
 # STARTUP
 # ==============================================================================
+
+
+def _seed_modules_and_colors_if_empty():
+    """Seed modules and rel_colors tables from JSX files if they are empty."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM modules")
+        modules_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM rel_colors")
+        rel_colors_count = cursor.fetchone()[0]
+
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(BASE_DIR, "..", "components", "data")
+
+    if modules_count == 0:
+        modules_path = os.path.join(data_dir, "default_nodes.jsx")
+        if os.path.isfile(modules_path):
+            print(f"  → Seeding modules from {modules_path}")
+            modules = extract_modules_from_jsx(modules_path)
+            count = insert_modules(modules)
+            print(f"  ✓ Loaded {count} modules")
+        else:
+            print(f"  ⚠ Modules file not found: {modules_path}")
+
+    if rel_colors_count == 0:
+        rel_colors_path = os.path.join(data_dir, "color_selections.jsx")
+        if os.path.isfile(rel_colors_path):
+            print(f"  → Seeding relationship colors from {rel_colors_path}")
+            colors = extract_rel_colors_from_jsx(rel_colors_path)
+            count = insert_rel_colors(colors)
+            print(f"  ✓ Loaded {count} relationship colors")
+        else:
+            print(f"  ⚠ Relationship colors file not found: {rel_colors_path}")
 
 
 @app.on_event("startup")
@@ -1406,6 +1820,10 @@ def startup_event():
             )
     else:
         print(f"\n✓ Database already contains {nodes_count} nodes")
+
+    # Always ensure modules and rel_colors are seeded (they may be empty
+    # if the DB was created before these tables were added)
+    _seed_modules_and_colors_if_empty()
 
     print("\n" + "=" * 60)
     print("✅ API ready at http://localhost:8000")
@@ -1447,6 +1865,9 @@ if __name__ == "__main__":
             print("\n⚠ No data files found. Starting with empty database.")
     else:
         print(f"\n✓ Database already contains {nodes_count} nodes (skipping data load)")
+
+    # Always ensure modules and rel_colors are seeded
+    _seed_modules_and_colors_if_empty()
 
     # Run server
     print("\n" + "=" * 60)
